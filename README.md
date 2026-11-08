@@ -9,8 +9,9 @@ Gom và viết lại các hàm hay nhất từ `model_src` và repo `airflow-dag
 ## Luồng train
 
 ```
-data ─► label summary ─► time split ─► fill missing ─► HARD selection ─► SOFT selection (bỏ phiếu)
-     ─► forward selection (chọn số feature) ─► train CatBoost ─► evaluate (Gini / decile / PSI / SHAP)
+data ─► label summary ─► time split ─► fill missing ─► HARD selection ─► TEMPORAL STABILITY
+     ─► SOFT selection (bỏ phiếu) ─► forward selection (chọn số feature) ─► train CatBoost
+     ─► evaluate (Gini / KS / decile / PSI / calibration / SHAP) ─► challenger scorecard + compare_models
      ─► quy đổi điểm 300–850 ─► lưu ModelBundle ─► (Spark) predict hàng loạt
 ```
 
@@ -38,11 +39,12 @@ src/train_model/
   config.py                   load_config
   data/                       make_synthetic_dataset, time_split, label_summary
   preprocessing/              fill_missing, encoder/imputer/scaler/transform kiểu sklearn, winsorizer
-  feature_selection/          HardFeatureSelector, SoftFeatureSelector, forward_selection_gini,
-                              select_by_importance, compute_iv, WoETransformer
-  modeling/                   train_catboost, evaluate_splits, ModelBundle,
+  feature_selection/          HardFeatureSelector, TemporalStabilitySelector, SoftFeatureSelector,
+                              forward_selection_gini, select_by_importance, compute_iv, WoETransformer
+  modeling/                   train_catboost, evaluate_splits, ModelBundle, LogisticScorecard,
                               CatBoostEnsembleClassifier / TransferLearner / Shrinker
-  evaluation/                 auc_gini(_by_group), decile_table, psi(_by_feature/_by_bucket), shap_importance, plots
+  evaluation/                 auc_gini(_by_group), ks_statistic, decile_table, psi(_by_feature/_by_bucket),
+                              calibration_table/summary, cross_audit, compare_models, shap_importance, plots
   scoring/                    fit_score_bounds, proba_to_score
   spark/                      create_spark_session, predict_spark, proba_to_score_spark,
                               woe_transform_spark, top_features_shap_spark   (cần pyspark)
@@ -65,6 +67,25 @@ Loại theo luật, lần lượt. Kết quả ở `report_` (cột nào bị lo
 
 `transform` trả về **giá trị gốc** của các cột được giữ. Muốn đổi sang WoE, dùng thêm `WoETransformer`.
 
+### Ổn định theo thời gian — `TemporalStabilitySelector`
+
+PSI chỉ so **phân phối** feature. Bước này kiểm tra **quan hệ với label** có giữ chiều qua các tháng không
+(một feature có phân phối ổn định vẫn có thể đổi ý nghĩa theo mùa / chính sách / kênh).
+
+Mỗi bin, mỗi tháng: `TR = tỉ lệ label của bin / tỉ lệ label của tháng − 1`. Chỉ các ô có bằng chứng mới bỏ phiếu:
+bin phải tách được label (kiểm định χ² qua các tháng) và ô phải lệch có ý nghĩa khỏi trung bình tháng (z-test).
+`score` = tỉ trọng (có trọng số) các ô cùng phía với chiều chủ đạo của bin: 1 = luôn giữ chiều, 0 = đổi chiều ngẫu nhiên.
+
+| `status` | Ý nghĩa | Mặc định |
+|---|---|---|
+| `stable` | `score >= threshold` (0.65) | giữ |
+| `unstable` | `score < threshold` trên train **hoặc** test | loại |
+| `no_signal` | không bin nào tách label có ý nghĩa | giữ (`drop_no_signal: true` để loại) |
+| `insufficient_time` | < 2 tháng đủ dữ liệu | giữ |
+
+`report_` (score/status train + test), `tables_[feature]` + `plot_temporal_consistency` để xem TR từng bin theo tháng.
+Config: mục `stability` trong `model_config.yaml`.
+
 ### Soft selection — `SoftFeatureSelector` (bỏ phiếu)
 
 10 tiêu chí, mỗi tiêu chí cho feature một phiếu. Giữ feature có **≥ `min_votes`** phiếu.
@@ -84,6 +105,19 @@ Bảng phiếu đầy đủ ở `votes_`.
 
 Sau đó `forward_selection_gini` thêm dần feature theo thứ tự số phiếu và đo Gini trên validation.
 `best_k` trả về số feature ít nhất mà Gini chỉ kém mức cao nhất ≤ 0.005.
+
+## Đánh giá thêm & so sánh model
+
+| Hàm | Trả lời câu hỏi |
+|---|---|
+| `calibration_table` / `calibration_summary` | Xác suất dự báo có khớp tỉ lệ thực tế từng bin không? (z-test mỗi bin, Hosmer–Lemeshow, Brier). Cần khi dùng xác suất làm PD. |
+| `cross_audit` | Model B có tìm ra nhóm rủi ro khác biệt có ý nghĩa **bên trong** bin của model A không (điểm mù của A)? |
+| `compare_models` | Champion / challenger trên nhiều tiêu chí: Gini, KS, calibration, cross-audit, số feature hiệu dụng, tỉ trọng feature lớn nhất. Chuẩn hoá theo model dẫn đầu (= 1) rồi lấy trung bình có trọng số. |
+| `LogisticScorecard` | Challenger minh bạch: logistic trên WoE + `points_table()` (điểm từng bin, PDO 20, 600 ↔ odds 50:1). |
+
+Các bước ổn định theo thời gian, calibration, cross-audit và so sánh champion/challenger lấy **ý tưởng** từ
+[AIDflow](https://github.com/aigensys-labs/aidflow) (FSL-1.1). Code được viết lại theo cấu trúc repo này, không chép
+mã nguồn. Docstring từng module ghi rõ phần nào đổi so với bản gốc.
 
 ## Model đã lưu — `ModelBundle`
 
@@ -124,7 +158,8 @@ Cấu hình cluster (k8s image, memory...) đặt trong `spark.conf` của confi
 1. Clone repo, tạo branch.
 2. Copy `configs/model_config.yaml` → sửa `model_code`, `target_col`, `cat_cols`, `exclude_cols`, `split_date`.
 3. Trong `01_train.ipynb`, thay cell **Load data** bằng data thật và đổi đường dẫn config ở cell Setup nếu cần.
-4. Chạy notebook, xem `report_` (hard), `votes_` (soft), Gini train/val/test, decile, PSI, SHAP.
+4. Chạy notebook, xem `report_` (hard, stability), `votes_` (soft), Gini train/val/test, decile, PSI, calibration,
+   SHAP và bảng `compare_models` (CatBoost vs scorecard).
 5. Model nằm ở `artifacts/<model_code>/`. Đưa thư mục này lên nơi lưu model của team để chạy predict.
 
 ## Dev
