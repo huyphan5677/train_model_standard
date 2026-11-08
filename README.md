@@ -103,6 +103,9 @@ dùng chung một thang, không bị kéo giãn theo từng batch như cách cũ
 > `tests/test_spark.py` tự bỏ qua khi không có pyspark. Lần đầu dùng trên cluster, nên chạy
 > `pytest tests/test_spark.py` để kiểm tra.
 
+Trên cluster cần cài package trước (`pip install ".[spark]"` trong image, hoặc build wheel bằng `uv build` rồi
+truyền qua `--py-files`), vì script import `train_model`. `--model-dir` là đường dẫn local tới bundle.
+
 ```bash
 export S3_ENDPOINT=... S3_ACCESS_KEY=... S3_SECRET_KEY=...   # nếu đọc/ghi s3a
 spark-submit scripts/predict_spark.py \
