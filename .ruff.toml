@@ -9,3 +9,6 @@ ignore = ["E501", "B905"]
 [lint.per-file-ignores]
 "notebooks/*" = ["E402", "F401", "I001"]
 "tests/*" = ["B011"]
+
+[lint.isort]
+known-first-party = ["train_model"]
