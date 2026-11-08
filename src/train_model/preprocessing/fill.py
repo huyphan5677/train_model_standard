@@ -16,6 +16,15 @@ def normalize_category(series: pd.Series, fill: str = "unknown") -> pd.Series:
     return out.astype(object)
 
 
+def to_category_str(series: pd.Series, na_value: str = "nan") -> pd.Series:
+    """Cast to plain Python ``str`` values with NaN/None -> ``na_value``.
+
+    Needed because ``Series.astype(str)`` keeps NaN as NaN on pandas >= 3 (string dtype), which CatBoost rejects.
+    """
+    obj = series.astype(object)
+    return obj.where(obj.notna(), na_value).map(str).astype(object)
+
+
 def fill_missing(
     df: pd.DataFrame,
     cat_cols: Sequence[str],

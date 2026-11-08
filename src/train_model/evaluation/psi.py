@@ -11,6 +11,8 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 
+from train_model.preprocessing.fill import to_category_str
+
 
 def _psi_from_shares(expected: np.ndarray, actual: np.ndarray, eps: float) -> float:
     e = np.where(expected <= 0, eps, expected)
@@ -54,8 +56,8 @@ def psi(
 
 def psi_categorical(expected, actual, eps: float = 1e-6) -> float:
     """PSI over category frequencies (NaN treated as its own category)."""
-    e = pd.Series(expected).astype(str).value_counts(normalize=True)
-    a = pd.Series(actual).astype(str).value_counts(normalize=True)
+    e = to_category_str(pd.Series(expected)).value_counts(normalize=True)
+    a = to_category_str(pd.Series(actual)).value_counts(normalize=True)
     if e.empty or a.empty:
         return float("nan")
     cats = e.index.union(a.index)

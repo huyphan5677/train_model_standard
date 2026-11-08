@@ -33,6 +33,8 @@ from sklearn.metrics import roc_auc_score
 from sklearn.preprocessing import StandardScaler
 from sklearn.tree import DecisionTreeClassifier
 
+from train_model.preprocessing.fill import to_category_str
+
 ALL_CRITERIA: tuple[str, ...] = (
     "correlation",
     "permutation",
@@ -55,14 +57,16 @@ class _Encoder:
     def __init__(self, X: pd.DataFrame, cat_cols: Sequence[str]):
         self.cat_cols = [c for c in X.columns if c in cat_cols or not pd.api.types.is_numeric_dtype(X[c])]
         self.num_cols = [c for c in X.columns if c not in self.cat_cols]
-        self.categories = {c: {v: i for i, v in enumerate(sorted(X[c].astype(str).unique()))} for c in self.cat_cols}
+        self.categories = {
+            c: {v: i for i, v in enumerate(sorted(to_category_str(X[c]).unique()))} for c in self.cat_cols
+        }
         self.medians = X[self.num_cols].median()
 
     def __call__(self, X: pd.DataFrame) -> pd.DataFrame:
         out = pd.DataFrame(index=X.index)
         for c in X.columns:
             if c in self.categories:
-                out[c] = X[c].astype(str).map(self.categories[c]).fillna(-1).astype(float)
+                out[c] = to_category_str(X[c]).map(self.categories[c]).fillna(-1).astype(float)
             else:
                 out[c] = pd.to_numeric(X[c], errors="coerce").fillna(self.medians[c]).astype(float)
         return out.fillna(0.0)
@@ -228,7 +232,7 @@ def forward_selection_gini(
         Xt = X_train[subset].copy()
         Xv = X_val[subset].copy()
         for c in cats:
-            Xt[c], Xv[c] = Xt[c].astype(str), Xv[c].astype(str)
+            Xt[c], Xv[c] = to_category_str(Xt[c]), to_category_str(Xv[c])
         model.fit(Xt, y_train, eval_set=(Xv, y_val))
         gini = 2 * roc_auc_score(y_val, model.predict_proba(Xv)[:, 1]) - 1
         rows.append({"n_features": k, "last_feature": subset[-1], "gini_val": gini})

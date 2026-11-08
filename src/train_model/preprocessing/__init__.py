@@ -1,6 +1,6 @@
 """Preprocessing: missing values, outliers, encoders and numeric transforms."""
 
-from train_model.preprocessing.fill import fill_missing, normalize_category
+from train_model.preprocessing.fill import fill_missing, normalize_category, to_category_str
 from train_model.preprocessing.missing_outliers import (
     CapCategoricalOutlier,
     cat_missing_step,
@@ -45,4 +45,5 @@ __all__ = [
     "normalize_category",
     "num_missing_step",
     "num_outlier_step",
+    "to_category_str",
 ]

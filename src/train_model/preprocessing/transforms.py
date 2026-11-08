@@ -23,6 +23,8 @@ from sklearn.preprocessing import (
     StandardScaler,
 )
 
+from train_model.preprocessing.fill import to_category_str
+
 
 class _ColumnMixin(BaseEstimator, TransformerMixin):
     columns: Sequence[str] | None
@@ -178,7 +180,7 @@ class LabelEncoderWrapper(_ColumnMixin):
 
     def fit(self, X: pd.DataFrame, y=None):
         self.mappings_ = {
-            col: {v: i for i, v in enumerate(sorted(X[col].astype(str).unique()))}
+            col: {v: i for i, v in enumerate(sorted(to_category_str(X[col]).unique()))}
             for col in self._cat_columns(X)
         }
         return self
@@ -187,7 +189,7 @@ class LabelEncoderWrapper(_ColumnMixin):
         X = X.copy()
         for col, mapping in self.mappings_.items():
             if col in X.columns:
-                X[col] = X[col].astype(str).map(mapping).fillna(-1).astype(int)
+                X[col] = to_category_str(X[col]).map(mapping).fillna(-1).astype(int)
         return X
 
 
@@ -203,14 +205,14 @@ class OneHotEncoderWrapper(_ColumnMixin):
         self.encoder_ = None
         if self.fitted_columns_:
             self.encoder_ = OneHotEncoder(drop=self.drop, sparse_output=False, handle_unknown="ignore")
-            self.encoder_.fit(X[self.fitted_columns_].astype(str))
+            self.encoder_.fit(X[self.fitted_columns_].apply(to_category_str))
         return self
 
     def transform(self, X: pd.DataFrame) -> pd.DataFrame:
         if self.encoder_ is None:
             return X.copy()
         encoded = pd.DataFrame(
-            self.encoder_.transform(X[self.fitted_columns_].astype(str)),
+            self.encoder_.transform(X[self.fitted_columns_].apply(to_category_str)),
             columns=self.encoder_.get_feature_names_out(self.fitted_columns_),
             index=X.index,
         )

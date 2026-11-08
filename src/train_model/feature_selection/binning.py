@@ -15,7 +15,8 @@ logger = logging.getLogger(__name__)
 
 def _prepare(series: pd.Series, is_cat: bool) -> np.ndarray:
     if is_cat:
-        return series.astype(object).where(series.notna(), np.nan).astype(str).replace("nan", np.nan).to_numpy()
+        obj = series.astype(object)
+        return obj.where(obj.isna(), obj.map(str)).to_numpy()
     return pd.to_numeric(series, errors="coerce").to_numpy(dtype=float)
 
 

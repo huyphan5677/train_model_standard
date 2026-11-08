@@ -96,6 +96,12 @@ def test_imputers_fill_nan(small_df):
     assert out["b"].isna().sum() == 0
 
 
+def test_encoders_handle_nan_categories():
+    df = pd.DataFrame({"c": ["x", None, "y", np.nan]})
+    assert LabelEncoderWrapper(columns=["c"]).fit(df).transform(df)["c"].nunique() == 3
+    assert OneHotEncoderWrapper(columns=["c"], drop=None).fit(df).transform(df).shape[1] == 3
+
+
 def test_label_encoder_unseen_category(small_df):
     enc = LabelEncoderWrapper(columns=["c"]).fit(small_df)
     out = enc.transform(pd.DataFrame({"c": ["x", "never_seen"]}))

@@ -107,6 +107,12 @@ def test_psi_by_feature_handles_categorical():
     assert res["cat"] > 0.25
 
 
+def test_psi_categorical_counts_nan_as_category():
+    from train_model.evaluation import psi_categorical
+
+    assert psi_categorical(["a"] * 50 + [None] * 50, ["a"] * 100) > 1.0
+
+
 def test_psi_by_bucket():
     ref = np.array([350, 450, 550, 650, 750] * 20)
     cur = np.array([350, 350, 450, 550, 750] * 20)
