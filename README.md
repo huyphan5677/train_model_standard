@@ -10,8 +10,9 @@ Gom và viết lại các hàm hay nhất từ `model_src` và repo `airflow-dag
 
 ```
 data ─► label summary ─► time split ─► fill missing ─► HARD selection ─► TEMPORAL STABILITY
-     ─► SOFT selection (bỏ phiếu) ─► forward selection (chọn số feature) ─► train CatBoost
-     ─► evaluate (Gini / KS / decile / PSI / calibration / SHAP) ─► challenger scorecard + compare_models
+     ─► SOFT selection (bỏ phiếu) ─► SHADOW check ─► forward selection (chọn số feature) ─► train CatBoost
+     ─► evaluate (Gini / KS / decile / PSI / calibration / SHAP) ─► drift (event PSI / SHAP drift)
+     ─► challenger scorecard (+ luật tương tác) + compare_models (DeLong) ─► ablation
      ─► quy đổi điểm 300–850 ─► lưu ModelBundle ─► (Spark) predict hàng loạt
 ```
 
@@ -40,11 +41,14 @@ src/train_model/
   data/                       make_synthetic_dataset, time_split, label_summary
   preprocessing/              fill_missing, encoder/imputer/scaler/transform kiểu sklearn, winsorizer
   feature_selection/          HardFeatureSelector, TemporalStabilitySelector, SoftFeatureSelector,
-                              forward_selection_gini, select_by_importance, compute_iv, WoETransformer
+                              ShadowFeatureSelector, TreeRuleMiner, forward_selection_gini,
+                              select_by_importance, compute_iv, WoETransformer
   modeling/                   train_catboost, evaluate_splits, ModelBundle, LogisticScorecard,
                               CatBoostEnsembleClassifier / TransferLearner / Shrinker
-  evaluation/                 auc_gini(_by_group), ks_statistic, decile_table, psi(_by_feature/_by_bucket),
-                              calibration_table/summary, cross_audit, compare_models, shap_importance, plots
+  evaluation/                 auc_gini(_by_group), ks_statistic, delong_test, auc_ci, decile_table,
+                              psi(_by_feature/_by_bucket), event_psi, psi_report, calibration_table/summary,
+                              cross_audit, compare_models, logistic_ablation, refit_ablation,
+                              shap_importance, shap_drift, plots
   scoring/                    fit_score_bounds, proba_to_score
   spark/                      create_spark_session, predict_spark, proba_to_score_spark,
                               woe_transform_spark, top_features_shap_spark   (cần pyspark)
@@ -103,6 +107,12 @@ Bảng phiếu đầy đủ ở `votes_`.
 | `l1` / `l2` | được Logistic Regression L1 / L2 giữ lại |
 | `rfe` | được RFE (DecisionTree) chọn |
 
+### Shadow check — `ShadowFeatureSelector`
+
+Mỗi feature có một bản xáo trộn (shadow). Train CatBoost trên thật + shadow (`n_shadows` lần × `cv` fold), đo mean |SHAP|
+trên fold kiểm tra. Mức nhiễu mỗi lần = quantile 0.9 của importance các shadow; giữ feature có importance trung bình vượt mức
+nhiễu trung bình. Chặt hơn `tree_vs_random` (1 cột ngẫu nhiên, 1 lần fit). Config: mục `shadow`.
+
 Sau đó `forward_selection_gini` thêm dần feature theo thứ tự số phiếu và đo Gini trên validation.
 `best_k` trả về số feature ít nhất mà Gini chỉ kém mức cao nhất ≤ 0.005.
 
@@ -113,9 +123,15 @@ Sau đó `forward_selection_gini` thêm dần feature theo thứ tự số phi�
 | `calibration_table` / `calibration_summary` | Xác suất dự báo có khớp tỉ lệ thực tế từng bin không? (z-test mỗi bin, Hosmer–Lemeshow, Brier). Cần khi dùng xác suất làm PD. |
 | `cross_audit` | Model B có tìm ra nhóm rủi ro khác biệt có ý nghĩa **bên trong** bin của model A không (điểm mù của A)? |
 | `compare_models` | Champion / challenger trên nhiều tiêu chí: Gini, KS, calibration, cross-audit, số feature hiệu dụng, tỉ trọng feature lớn nhất. Chuẩn hoá theo model dẫn đầu (= 1) rồi lấy trung bình có trọng số. |
-| `LogisticScorecard` | Challenger minh bạch: logistic trên WoE + `points_table()` (điểm từng bin, PDO 20, 600 ↔ odds 50:1). |
+| `LogisticScorecard` | Challenger minh bạch: logistic trên WoE + `points_table()` (điểm từng bin, PDO 20, 600 ↔ odds 50:1). `interactions=True` thêm luật tương tác (dưới). `ablation()` — Gini mất khi bỏ từng feature, tính giải tích. |
+| `TreeRuleMiner` | Luật tương tác `A & B` từ cây nông trên ma trận WoE, bắt đầu từ chính logistic WoE và chọn trên phần dư (Lasso, quy tắc 1-SE) → chỉ giữ luật bổ sung điều scorecard chưa có. Lọc: support → Simpson → tương quan → Lasso. Data không có tương tác thật → 0 luật. |
+| `delong_test` / `auc_ci` / `pairwise_delong` | Chênh lệch Gini giữa 2 model **trên cùng tập** có ý nghĩa thống kê không; khoảng tin cậy của Gini. `compare_models` trả kèm `delong`. |
+| `psi_report` / `event_psi` | Ngoài PSI phân phối: PSI của **các dòng label = 1** giữa các bin (rủi ro dồn sang bin khác dù phân phối đứng yên) + PSI có trọng số importance của model, dòng `(model)` = tổng. |
+| `shap_drift` | Mean \|SHAP\| từng feature train vs test (Welch t-test): model có dựa vào feature khác đi trên data mới không. |
+| `logistic_ablation` / `refit_ablation` | Bỏ từng feature mất bao nhiêu Gini (DeLong cho ý nghĩa). Logistic: công thức xoá trên Hessian + Newton, có tính phạt L2 — không train lại, khớp fit lại thật. Model khác: train lại qua callback. |
 
-Các bước ổn định theo thời gian, calibration, cross-audit và so sánh champion/challenger lấy **ý tưởng** từ
+Các bước ổn định theo thời gian, shadow check, calibration, cross-audit, so sánh champion/challenger, DeLong, event PSI,
+SHAP drift, luật tương tác và ablation lấy **ý tưởng** từ
 [AIDflow](https://github.com/aigensys-labs/aidflow) (FSL-1.1). Code được viết lại theo cấu trúc repo này, không chép
 mã nguồn. Docstring từng module ghi rõ phần nào đổi so với bản gốc.
 
@@ -158,8 +174,8 @@ Cấu hình cluster (k8s image, memory...) đặt trong `spark.conf` của confi
 1. Clone repo, tạo branch.
 2. Copy `configs/model_config.yaml` → sửa `model_code`, `target_col`, `cat_cols`, `exclude_cols`, `split_date`.
 3. Trong `01_train.ipynb`, thay cell **Load data** bằng data thật và đổi đường dẫn config ở cell Setup nếu cần.
-4. Chạy notebook, xem `report_` (hard, stability), `votes_` (soft), Gini train/val/test, decile, PSI, calibration,
-   SHAP và bảng `compare_models` (CatBoost vs scorecard).
+4. Chạy notebook, xem `report_` (hard, stability, shadow), `votes_` (soft), Gini train/val/test, decile, PSI, calibration,
+   SHAP, drift, bảng `compare_models` + DeLong (CatBoost vs scorecard) và ablation.
 5. Model nằm ở `artifacts/<model_code>/`. Đưa thư mục này lên nơi lưu model của team để chạy predict.
 
 ## Dev
