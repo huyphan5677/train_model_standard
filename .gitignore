@@ -1,0 +1,26 @@
+# environments
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# tooling caches
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+.superpowers/
+
+# model / data outputs
+artifacts/
+catboost_info/
+*.cbm
+data/
+*.parquet
+spark-warehouse/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
