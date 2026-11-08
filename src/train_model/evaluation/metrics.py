@@ -1,16 +1,22 @@
-"""Discrimination metrics: AUC / Gini (overall and per group), decile (lift) table, PR-AUC per bin."""
+"""Discrimination metrics: AUC / Gini (overall and per group), KS, decile (lift) table, PR-AUC per bin."""
 
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-from sklearn.metrics import auc, precision_recall_curve, roc_auc_score
+from sklearn.metrics import auc, precision_recall_curve, roc_auc_score, roc_curve
 
 
 def auc_gini(y_true, y_score) -> dict[str, float]:
     """``{"auc": AUC, "gini": 2*AUC - 1}``."""
     a = float(roc_auc_score(y_true, y_score))
     return {"auc": a, "gini": 2 * a - 1}
+
+
+def ks_statistic(y_true, y_score) -> float:
+    """Kolmogorov–Smirnov: max gap between the cumulative score distributions of class 1 and 0."""
+    fpr, tpr, _ = roc_curve(y_true, y_score)
+    return float(np.max(np.abs(tpr - fpr)))
 
 
 def auc_gini_by_group(df: pd.DataFrame, y_true_col: str, y_score_col: str, group_col: str) -> pd.DataFrame:
