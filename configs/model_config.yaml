@@ -23,7 +23,7 @@ features:
   num_fill: null                  # null = giữ NaN (CatBoost tự xử lý)
 
 split:
-  split_date: 20250701            # test = date >= split_date; có thể là dict {client: date}
+  split_date: 20250501            # test = date >= split_date; có thể là dict {client: date}
   val_size: 0.2                   # tỉ lệ validation lấy ngẫu nhiên từ phần train
   seed: 42
 

@@ -8,7 +8,7 @@ from train_model.config import load_config
 def test_load_default_config(config_path):
     cfg = load_config(config_path)
     assert cfg.model.target_col == "GB"
-    assert cfg.split.split_date == 20250701
+    assert cfg.split.split_date == 20250501
     assert cfg.soft_selection["min_votes"] == 3
     assert "device_manu" in cfg.features.cat_cols
     assert cfg.features.cat_fill == "unknown"
