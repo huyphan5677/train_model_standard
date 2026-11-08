@@ -94,11 +94,11 @@ def test_selector_drop_no_signal_option():
     assert not set(no_signal) & set(drop.selected_features_)
 
 
-def test_selector_with_oot_sample():
+def test_selector_with_validation_sample():
     X, y = _panel(seed=1)
-    X_oot, y_oot = _panel(n=6000, seed=2)
-    sel = TemporalStabilitySelector(time_col="t", n_bins=5).fit(X, y, X_oot, y_oot)
-    assert {"score_oot", "status_oot"} <= set(sel.report_.columns)
+    X_val, y_val = _panel(n=6000, seed=2)
+    sel = TemporalStabilitySelector(time_col="t", n_bins=5).fit(X, y, X_val, y_val)
+    assert {"score_val", "status_val"} <= set(sel.report_.columns)
     assert "stable" in sel.selected_features_
 
 
@@ -107,4 +107,4 @@ def test_selector_validates_inputs():
     with pytest.raises(ValueError, match="time_col"):
         TemporalStabilitySelector(time_col="missing").fit(X, y)
     with pytest.raises(ValueError, match="together"):
-        TemporalStabilitySelector(time_col="t").fit(X, y, X_oot=X)
+        TemporalStabilitySelector(time_col="t").fit(X, y, X_val=X)

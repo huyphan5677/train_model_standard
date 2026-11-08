@@ -35,7 +35,7 @@ hard_selection:
   max_n_bins: 10
 
 stability:                        # TemporalStabilitySelector — quan hệ feature↔label có giữ chiều qua các tháng?
-  threshold: 0.65                 # consistency < ngưỡng (trên train hoặc test) -> loại
+  threshold: 0.65                 # consistency < ngưỡng (trên train hoặc val) -> loại
   n_bins: 10                      # số bin quantile cho cột số
   min_bin_obs: 20                 # bỏ ô (bin, tháng) có <= số dòng này
   alpha: 0.05                     # mức ý nghĩa để coi bin là có tín hiệu

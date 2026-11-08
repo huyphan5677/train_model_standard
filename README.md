@@ -83,7 +83,7 @@ bin phải tách được label (kiểm định χ² qua các tháng) và ô ph�
 | `status` | Ý nghĩa | Mặc định |
 |---|---|---|
 | `stable` | `score >= threshold` (0.65) | giữ |
-| `unstable` | `score < threshold` trên train **hoặc** test | loại |
+| `unstable` | `score < threshold` trên train **hoặc** val (không dùng test để chọn feature — leakage) | loại |
 | `no_signal` | không bin nào tách label có ý nghĩa | giữ (`drop_no_signal: true` để loại) |
 | `insufficient_time` | < 2 tháng đủ dữ liệu | giữ |
 

@@ -27,6 +27,15 @@ def test_event_psi_same_population_small():
     assert event_psi(a["cat"], a["y"], b["cat"], b["y"]) < 0.02
 
 
+def test_event_label_selects_the_class_followed():
+    ref, cur = _sample(20000, 0, True), _sample(20000, 1, False)
+    ones = event_psi(ref["x"], ref["y"], cur["x"], cur["y"])
+    zeros = event_psi(ref["x"], ref["y"], cur["x"], cur["y"], event_label=0)
+    assert ones > 0.25 and 0 < zeros < ones  # zeros are the majority class: their distribution moves less
+    rep = psi_report(ref, cur, ["x"], "y", event_label=0).set_index("feature")
+    assert rep.loc["x", "event_psi"] == pytest.approx(zeros)
+
+
 def test_event_psi_handles_empty_cases():
     assert np.isnan(event_psi([1, 2, 3], [0, 0, 0], [1, 2, 3], [0, 0, 0]))
 

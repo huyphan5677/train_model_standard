@@ -106,16 +106,19 @@ def _bin_labels(ref: pd.Series, cur: pd.Series, bins: int) -> tuple[pd.Series, p
     return to_category_str(ref), to_category_str(cur)
 
 
-def event_psi(ref_values, ref_y, cur_values, cur_y, bins: int = 10, min_count: int = 30, eps: float = 1e-6) -> float:
-    """PSI of the distribution of **label-1 rows** across bins ("lift PSI" in AIDflow).
+def event_psi(ref_values, ref_y, cur_values, cur_y, bins: int = 10, min_count: int = 30, eps: float = 1e-6,
+              event_label: int = 1) -> float:
+    """PSI of the distribution of the **event rows** (``y == event_label``) across bins ("lift PSI" in AIDflow).
 
     Volume PSI can stay low while the risk moves: e.g. the bads shift from one bin to another.
-    This compares, per bin, the share of all label-1 rows that fall into the bin. Bins with
-    ``count <= min_count`` on either side are ignored (unstable rates).
+    This compares, per bin, the share of all event rows that fall into the bin. Bins with
+    ``count <= min_count`` on either side are ignored (unstable rates). When label 1 means *good*
+    (``target_label: good``), pass ``event_label=0`` to follow the bads.
     """
     r_bin, c_bin = _bin_labels(pd.Series(ref_values).reset_index(drop=True),
                                pd.Series(cur_values).reset_index(drop=True), bins)
-    ry, cy = pd.Series(np.asarray(ref_y, dtype=float)), pd.Series(np.asarray(cur_y, dtype=float))
+    ry = pd.Series((np.asarray(ref_y) == event_label).astype(float))
+    cy = pd.Series((np.asarray(cur_y) == event_label).astype(float))
     r = ry.groupby(r_bin.to_numpy()).agg(["sum", "count"])
     c = cy.groupby(c_bin.to_numpy()).agg(["sum", "count"])
     idx = r.index.union(c.index)
@@ -142,8 +145,10 @@ def psi_report(
     importance: pd.Series | dict | None = None,
     bins: int = 10,
     min_count: int = 30,
+    event_label: int = 1,
 ) -> pd.DataFrame:
-    """Per-feature drift: volume PSI + event PSI, optionally weighted by model importance.
+    """Per-feature drift: volume PSI + event PSI (rows with ``target == event_label``), optionally
+    weighted by model importance.
 
     ``importance`` (e.g. mean |SHAP| or |coef|) is normalised to sum 1 over ``features``; the weighted
     columns show how much each feature's drift matters *for the model*, and their sums (last row
@@ -156,7 +161,8 @@ def psi_report(
         a = c_bin.value_counts(normalize=True)
         idx = e.index.union(a.index)
         vol = _psi_from_shares(e.reindex(idx, fill_value=0).to_numpy(), a.reindex(idx, fill_value=0).to_numpy(), 1e-6)
-        ev = event_psi(df_ref[f], df_ref[target], df_cur[f], df_cur[target], bins=bins, min_count=min_count)
+        ev = event_psi(df_ref[f], df_ref[target], df_cur[f], df_cur[target], bins=bins, min_count=min_count,
+                       event_label=event_label)
         rows.append({"feature": f, "psi": vol, "event_psi": ev})
     out = pd.DataFrame(rows)
     out["psi_status"] = out["psi"].map(_status)

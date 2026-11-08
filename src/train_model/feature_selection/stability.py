@@ -156,8 +156,12 @@ class TemporalStabilitySelector(BaseEstimator, TransformerMixin):
     Numeric features are cut into ``n_bins`` quantile bins learnt on the fit sample; categorical
     features use their categories. Missing values are their own bin.
 
-    ``fit(X, y, X_oot=None, y_oot=None)``: when an out-of-time sample is given, the same bins are
-    applied to it and a feature must be consistent on **both** samples.
+    ``fit(X, y, X_val=None, y_val=None)``: when a second sample is given (e.g. the validation split),
+    the same bins are applied to it and a feature must be consistent on **both** samples — this guards
+    against a feature looking consistent by chance on one sample.
+
+    Do **not** pass the final out-of-time test set: choosing features with the test labels makes the
+    test metrics optimistic (leakage). The test set must only be used to evaluate the result.
 
     Result attributes: ``report_`` (score / status per sample, ``keep``), ``selected_features_``,
     ``tables_`` (per-feature (bin, period) table on the fit sample, for plots).
@@ -204,11 +208,11 @@ class TemporalStabilitySelector(BaseEstimator, TransformerMixin):
             return False
         return not self.drop_no_signal
 
-    def fit(self, X: pd.DataFrame, y, X_oot: pd.DataFrame | None = None, y_oot=None):
+    def fit(self, X: pd.DataFrame, y, X_val: pd.DataFrame | None = None, y_val=None):
         if self.time_col not in X.columns:
             raise ValueError(f"time_col {self.time_col!r} not in X")
-        if (X_oot is None) != (y_oot is None):
-            raise ValueError("X_oot and y_oot must be given together")
+        if (X_val is None) != (y_val is None):
+            raise ValueError("X_val and y_val must be given together")
         features = [c for c in X.columns if c != self.time_col]
         self.edges_ = {f: None if self._is_cat(X, f) else fit_bin_edges(X[f], self.n_bins) for f in features}
 
@@ -217,12 +221,12 @@ class TemporalStabilitySelector(BaseEstimator, TransformerMixin):
             res = self._test(X, y, f)
             tables[f] = res.table
             row = {"feature": f, "score": res.score, "status": res.status, "n_bins": res.n_bins}
-            oot_status = None
-            if X_oot is not None:
-                res_oot = self._test(X_oot, y_oot, f)
-                row.update(score_oot=res_oot.score, status_oot=res_oot.status)
-                oot_status = res_oot.status
-            row["keep"] = self._keep(res.status) and self._keep(oot_status)
+            val_status = None
+            if X_val is not None:
+                res_val = self._test(X_val, y_val, f)
+                row.update(score_val=res_val.score, status_val=res_val.status)
+                val_status = res_val.status
+            row["keep"] = self._keep(res.status) and self._keep(val_status)
             rows.append(row)
 
         self.report_ = pd.DataFrame(rows).sort_values("score", na_position="last").reset_index(drop=True)

@@ -4,6 +4,10 @@ Idea adapted from AIDflow's *CalibrationAssessment* (re-implemented): bin the pr
 in each bin whether the observed rate differs significantly from the mean prediction. The share of
 bins **without** a significant gap is the calibration score (1.0 = calibrated everywhere).
 A Hosmer–Lemeshow chi-square test over the same bins is reported as the global test.
+
+Each bin is tested at level ``alpha``, so even a perfectly calibrated model has on average
+``alpha * n_bins`` flagged bins (0.5 with the defaults): read a single flagged bin with care and rely
+on the Hosmer–Lemeshow p-value for the overall verdict.
 """
 
 from __future__ import annotations
