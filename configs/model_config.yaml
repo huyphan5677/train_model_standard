@@ -34,6 +34,13 @@ hard_selection:
   corr_threshold: 0.9             # cặp |corr| > ngưỡng -> bỏ cột IV thấp hơn
   max_n_bins: 10
 
+stability:                        # TemporalStabilitySelector — quan hệ feature↔label có giữ chiều qua các tháng?
+  threshold: 0.65                 # consistency < ngưỡng (trên train hoặc test) -> loại
+  n_bins: 10                      # số bin quantile cho cột số
+  min_bin_obs: 20                 # bỏ ô (bin, tháng) có <= số dòng này
+  alpha: 0.05                     # mức ý nghĩa để coi bin là có tín hiệu
+  drop_no_signal: false           # true: loại cả feature không bin nào tách được label
+
 soft_selection:
   top_k: 15                       # top-k cho các tiêu chí xếp hạng
   min_votes: 3                    # giữ feature đạt >= min_votes tiêu chí

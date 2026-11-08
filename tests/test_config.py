@@ -13,6 +13,7 @@ def test_load_default_config(config_path):
     assert "device_manu" in cfg.features.cat_cols
     assert cfg.features.cat_fill == "unknown"
     assert cfg.scoring["lower"] == 300
+    assert cfg.stability["threshold"] == 0.65
 
 
 def test_missing_section_raises(tmp_path: Path):

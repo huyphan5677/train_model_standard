@@ -1,4 +1,4 @@
-"""Feature selection: optbinning IV/WoE, hard (rule-based) and soft (voting) selection, importance."""
+"""Feature selection: optbinning IV/WoE, hard (rule-based), temporal stability and soft (voting) selection, importance."""
 
 from train_model.feature_selection.binning import (
     WoETransformer,
@@ -14,8 +14,16 @@ from train_model.feature_selection.soft import (
     best_k,
     forward_selection_gini,
 )
+from train_model.feature_selection.stability import (
+    ConsistencyResult,
+    TemporalStabilitySelector,
+    temporal_consistency,
+)
 
 __all__ = [
+    "ConsistencyResult",
+    "TemporalStabilitySelector",
+    "temporal_consistency",
     "ALL_CRITERIA",
     "ImportanceSelector",
     "SoftFeatureSelector",

@@ -42,6 +42,7 @@ class ModelConfig:
     features: FeatureSection
     split: SplitSection
     hard_selection: dict[str, Any] = field(default_factory=dict)
+    stability: dict[str, Any] = field(default_factory=dict)
     soft_selection: dict[str, Any] = field(default_factory=dict)
     catboost: dict[str, Any] = field(default_factory=dict)
     scoring: dict[str, Any] = field(default_factory=dict)
@@ -89,6 +90,7 @@ def load_config(path: str | Path) -> ModelConfig:
         features=_build(FeatureSection, "features", features),
         split=_build(SplitSection, "split", raw["split"]),
         hard_selection=dict(raw.get("hard_selection") or {}),
+        stability=dict(raw.get("stability") or {}),
         soft_selection=dict(raw.get("soft_selection") or {}),
         catboost=dict(raw.get("catboost") or {}),
         scoring=dict(raw.get("scoring") or {}),
