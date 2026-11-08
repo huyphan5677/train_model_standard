@@ -57,6 +57,22 @@ soft_selection:
     - l2
     - rfe
 
+shadow:                           # ShadowFeatureSelector — importance phải vượt mức nhiễu của bản xáo trộn
+  n_shadows: 3                    # số lần xáo trộn
+  cv: 3                           # số fold mỗi lần
+  quantile: 0.9                   # mức nhiễu = quantile importance của các shadow
+  catboost_params:
+    iterations: 200
+
+interactions:                     # TreeRuleMiner — luật tương tác cho LogisticScorecard(interactions=True)
+  n_estimators: 100               # cây nông sinh luật (bắt đầu từ logistic WoE -> chỉ học phần còn thiếu)
+  max_depth: 2                    # 2 = luật theo cặp; 3 dễ overfit khi data không có tương tác thật
+  min_rule_support: 0.01          # luật phải phủ > 1% dòng
+  min_target_support: 0.15        # và chứa > 15% số dòng label=1
+  overlap_threshold: 0.9          # Simpson: luật gần như nằm trong luật khác -> bỏ (trừ khi tỉ lệ label khác có ý nghĩa)
+  max_correlation: 0.9
+  max_rules: 10
+
 catboost:
   iterations: 500
   depth: 4
