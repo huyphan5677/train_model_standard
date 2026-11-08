@@ -18,7 +18,9 @@ metric              meaning                                                     
 Each metric is scaled *leader-anchored*: the best model gets 1.0, the others a proportion of it
 (``v / best`` for higher-is-better, ``best / v`` for lower-is-better). The composite is the weighted
 mean of the scaled metrics; the highest composite is the champion. Metrics that are missing for any
-model (e.g. no importances given) are left out of the composite.
+model (e.g. no importances given) are left out of the composite. ``delong`` tells whether the Gini
+gaps between models are statistically significant — a champion that wins on Gini by a
+non-significant margin is not really better on discrimination.
 """
 
 from __future__ import annotations
@@ -32,6 +34,7 @@ import pandas as pd
 from train_model.evaluation.calibration import calibration_summary
 from train_model.evaluation.cross_audit import CrossAuditResult, cross_audit
 from train_model.evaluation.metrics import auc_gini, ks_statistic
+from train_model.evaluation.stat_tests import pairwise_delong
 
 HIGHER_BETTER = ("gini", "ks", "calibration", "auditor")
 LOWER_BETTER = ("audited", "exposure", "max_share")
@@ -43,6 +46,7 @@ class ComparisonResult:
     scaled: pd.DataFrame  # leader-anchored 0..1 values + composite, sorted best first
     champion: str
     audit: CrossAuditResult | None
+    delong: pd.DataFrame | None  # pairwise DeLong test of the Gini differences
 
 
 def feature_exposure(importance: Mapping[str, float] | pd.Series) -> tuple[float, float]:
@@ -99,9 +103,10 @@ def compare_models(
         if importances and name in importances:
             rows[name]["exposure"], rows[name]["max_share"] = feature_exposure(importances[name])
 
-    audit = None
+    audit, delong = None, None
     if len(scores) > 1:
         audit = cross_audit(y, scores, n_bins=n_bins, alpha=alpha)
+        delong = pairwise_delong(y, scores, alpha=alpha)
         for name in scores:
             rows[name]["audited"] = audit.summary.loc[name, "audited"]
             rows[name]["auditor"] = audit.summary.loc[name, "auditor"]
@@ -113,4 +118,4 @@ def compare_models(
     w = pd.Series({c: (weights or {}).get(c, 1.0) for c in usable}, dtype=float)
     scaled["composite"] = (scaled[usable] * w).sum(axis=1) / w.sum()
     scaled = scaled.sort_values("composite", ascending=False)
-    return ComparisonResult(metrics=metrics, scaled=scaled, champion=str(scaled.index[0]), audit=audit)
+    return ComparisonResult(metrics=metrics, scaled=scaled, champion=str(scaled.index[0]), audit=audit, delong=delong)

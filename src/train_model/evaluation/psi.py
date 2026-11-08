@@ -1,4 +1,4 @@
-"""Population Stability Index — the single PSI implementation of the package.
+"""Population Stability Index — volume PSI, event (lift) PSI and an importance-weighted drift report.
 
 Rule of thumb: PSI < 0.1 stable, 0.1–0.25 moderate shift, > 0.25 significant shift.
 """
@@ -86,3 +86,89 @@ def psi_by_bucket(ref_scores, cur_scores, bucket_edges: Sequence[float], eps: fl
     c = pd.Series(cur).value_counts(normalize=True).reindex(labels, fill_value=0).to_numpy()
     rr, cc = np.where(r <= 0, eps, r), np.where(c <= 0, eps, c)
     return pd.DataFrame({"bucket": labels, "ref_pct": r, "cur_pct": c, "psi": (cc - rr) * np.log(cc / rr)})
+
+
+# --------------------------------------------------------------------------- event (lift) PSI
+def _bin_labels(ref: pd.Series, cur: pd.Series, bins: int) -> tuple[pd.Series, pd.Series]:
+    """Shared bins: quantile edges of ``ref`` for numerics, categories (NaN = own category) otherwise."""
+    if pd.api.types.is_numeric_dtype(ref):
+        r = pd.to_numeric(ref, errors="coerce")
+        edges = np.unique(np.quantile(r.dropna(), np.linspace(0, 1, bins + 1))) if r.notna().any() else np.array([0.0])
+        if len(edges) < 2:
+            edges = np.array([-np.inf, np.inf])
+        edges[0], edges[-1] = -np.inf, np.inf
+
+        def cut(s: pd.Series) -> pd.Series:
+            codes = pd.cut(pd.to_numeric(s, errors="coerce"), edges, labels=False, include_lowest=True)
+            return codes.map(lambda c: "missing" if pd.isna(c) else f"b{int(c):02d}")
+
+        return cut(ref), cut(cur)
+    return to_category_str(ref), to_category_str(cur)
+
+
+def event_psi(ref_values, ref_y, cur_values, cur_y, bins: int = 10, min_count: int = 30, eps: float = 1e-6) -> float:
+    """PSI of the distribution of **label-1 rows** across bins ("lift PSI" in AIDflow).
+
+    Volume PSI can stay low while the risk moves: e.g. the bads shift from one bin to another.
+    This compares, per bin, the share of all label-1 rows that fall into the bin. Bins with
+    ``count <= min_count`` on either side are ignored (unstable rates).
+    """
+    r_bin, c_bin = _bin_labels(pd.Series(ref_values).reset_index(drop=True),
+                               pd.Series(cur_values).reset_index(drop=True), bins)
+    ry, cy = pd.Series(np.asarray(ref_y, dtype=float)), pd.Series(np.asarray(cur_y, dtype=float))
+    r = ry.groupby(r_bin.to_numpy()).agg(["sum", "count"])
+    c = cy.groupby(c_bin.to_numpy()).agg(["sum", "count"])
+    idx = r.index.union(c.index)
+    r, c = r.reindex(idx, fill_value=0), c.reindex(idx, fill_value=0)
+    ok = (r["count"] > min_count) & (c["count"] > min_count)
+    if not ok.any() or r.loc[ok, "sum"].sum() == 0 or c.loc[ok, "sum"].sum() == 0:
+        return float("nan")
+    e = (r.loc[ok, "sum"] / r.loc[ok, "sum"].sum()).to_numpy()
+    a = (c.loc[ok, "sum"] / c.loc[ok, "sum"].sum()).to_numpy()
+    return _psi_from_shares(e, a, eps)
+
+
+def _status(v: float) -> str:
+    if np.isnan(v):
+        return "n/a"
+    return "stable" if v < 0.1 else ("warning" if v < 0.25 else "critical")
+
+
+def psi_report(
+    df_ref: pd.DataFrame,
+    df_cur: pd.DataFrame,
+    features: Sequence[str],
+    target: str,
+    importance: pd.Series | dict | None = None,
+    bins: int = 10,
+    min_count: int = 30,
+) -> pd.DataFrame:
+    """Per-feature drift: volume PSI + event PSI, optionally weighted by model importance.
+
+    ``importance`` (e.g. mean |SHAP| or |coef|) is normalised to sum 1 over ``features``; the weighted
+    columns show how much each feature's drift matters *for the model*, and their sums (last row
+    ``(model)``) give a model-level drift figure. Status: stable < 0.1 <= warning < 0.25 <= critical.
+    """
+    rows = []
+    for f in features:
+        r_bin, c_bin = _bin_labels(df_ref[f].reset_index(drop=True), df_cur[f].reset_index(drop=True), bins)
+        e = r_bin.value_counts(normalize=True)
+        a = c_bin.value_counts(normalize=True)
+        idx = e.index.union(a.index)
+        vol = _psi_from_shares(e.reindex(idx, fill_value=0).to_numpy(), a.reindex(idx, fill_value=0).to_numpy(), 1e-6)
+        ev = event_psi(df_ref[f], df_ref[target], df_cur[f], df_cur[target], bins=bins, min_count=min_count)
+        rows.append({"feature": f, "psi": vol, "event_psi": ev})
+    out = pd.DataFrame(rows)
+    out["psi_status"] = out["psi"].map(_status)
+    out["event_psi_status"] = out["event_psi"].map(_status)
+    if importance is not None:
+        w = pd.Series(importance, dtype=float).reindex(features).abs().fillna(0.0)
+        w = w / w.sum() if w.sum() > 0 else w
+        out["weight"] = w.to_numpy()
+        out["weighted_psi"] = out["psi"] * out["weight"]
+        out["weighted_event_psi"] = out["event_psi"].fillna(0.0) * out["weight"]
+        out = out.sort_values("weight", ascending=False).reset_index(drop=True)
+        total = {"feature": "(model)", "weight": out["weight"].sum(),
+                 "weighted_psi": out["weighted_psi"].sum(), "weighted_event_psi": out["weighted_event_psi"].sum()}
+        out = pd.concat([out, pd.DataFrame([total])], ignore_index=True)
+    return out
